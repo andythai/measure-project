@@ -8,23 +8,32 @@ using namespace std;
 using namespace cv;
 
 // Global variables
-bool DEBUG = false;
-Mat image;
-string IMAGE_DIRECTORY;
-const string INPUT_CONSTANT = "input/";
-vector<Coordinates*> POINTS;
-int LOCATION = 0;
-int X_POS = -1;
-int Y_POS = -1;
+bool DEBUG = false;							// Debug to check version and dependencies
+Mat image;									// Original image
+string IMAGE_DIRECTORY;						// Input image
+const string INPUT_CONSTANT = "input/";		// Input folder string
+const string OUTPUT_CONSTANT = "output/";	// Output folder string
+vector<Coordinates*> POINTS;				// Pixel coordinates
+vector<Mat*> IMAGES;						// Vector of images for gfx, used for full resolution tagging. Backend, drawn on, but not displayed
+Mat* TEMP = new Mat();						// Copy of current shown iteration. Used as a WORKSPACE and displayed.
+int LOCATION = 0;							// Iteration index
+const double PI = 3.141592653589793238463;	// Pi constant
+bool REPEAT = true;							// Loop var to repeat main loop
+int X_POS = -1;								// Mouse position for x
+int Y_POS = -1;								// Mouse position for y
+int zoom_scale = 200;						// Scale to zoom in
 
 // Forward declarations
 static void setup_vector();
+static void check_directories();
 static void load_image();
+static void print_controls();
 static void show_image();
 void mouse_callback(int event, int x, int y, int flags, void* userdata);
-static void calc_width();
-static void calc_height();
-static void calc_angle();
+static void undo();
+static void zoom(int x, int y);
+static void save();
+static void prompt_new();
 
 // Main method
 int main()
@@ -35,41 +44,54 @@ int main()
 		cout << getBuildInformation();
 	}
 
-	// Initializes vector of coordinates
-	setup_vector();
-
-	// Check if input and output directories exist
-	if (!fs::exists("input")) { // Check if input folder exists
-		cout << "\nNo input folder detected! Creating input folder." << endl <<
-			"FrameGrabber will shut down. Please move your input images to the input folder." << endl;
-		fs::create_directory("input"); // create input folder
-		cin.ignore();
-		return 1;
+	while (REPEAT) {
+		setup_vector();
+		check_directories();
+		load_image();
+		print_controls();
+		show_image();
+		save();
+		prompt_new();
 	}
-	if (!fs::exists("output")) { // Check if output folder exists
-		cout << "\nCreating output folder..." << endl;
-		fs::create_directory("output"); // create output folder
-	}
-
-
-	load_image();
-
-	cout << "Click on the left, right, top, and bottom corners of the rat's eye (respectively)." << endl;
-	cout << "DO NOT PRESS ENTER ON THIS CONSOLE UNTIL FINISHED." << endl;
-
-	show_image();
-
-	cin.ignore();
-	cin.ignore();
-	cin.ignore();
 
 	return 0;
 }
 
 // Initializes points for use in tracking ratios and angles
 static void setup_vector() {
-	for (int i = 0; i < 7; i++) {
-		POINTS.push_back(new Coordinates());
+	// Reset if re-iterated
+	if (POINTS.size() != 0) {
+		for (int i = 0; i < 7; i++) {
+			POINTS[i]->set_coords(-1, -1);
+			delete IMAGES[i];
+			IMAGES[i] = new Mat();
+		}
+		delete IMAGES[7];
+		IMAGES[7] = new Mat();
+	}
+	// Otherwise initialize
+	else {
+		for (int i = 0; i < 7; i++) {
+			POINTS.push_back(new Coordinates());
+			IMAGES.push_back(new Mat());
+		}
+		IMAGES.push_back(new Mat()); // 1 more
+	}
+}
+
+// Check if specific directories exist
+static void check_directories() {
+	// Check if input and output directories exist
+	if (!fs::exists("input")) { // Check if input folder exists
+		cout << "\nNo input folder detected! Creating input folder." << endl <<
+			"FrameGrabber will shut down. Please move your input images to the input folder." << endl;
+		fs::create_directory("input"); // create input folder
+		cin.ignore();
+		exit(EXIT_SUCCESS);
+	}
+	if (!fs::exists("output")) { // Check if output folder exists
+		cout << "\nCreating output folder..." << endl;
+		fs::create_directory("output"); // create output folder
 	}
 }
 
@@ -94,6 +116,21 @@ static void load_image() {
 			cout << "Unable to load " << IMAGE_DIRECTORY << "! Please re-enter image filename: ";
 		}
 	}
+	
+	// Sets image vector
+	for (int i = 0; i < 8; i++) {
+		image.copyTo(*IMAGES[i]);
+	}
+}
+
+// Prints controls for the program
+static void print_controls() {
+	cout << "\nClick on the left, right, top, and bottom corners of the rat's eye (respectively for width and height)." << endl;
+	cout << "Then select three anchor points, the first, middle point, then end point." << endl << endl;
+	cout << "CONTROLS:" << endl;
+	cout << "\tLeft click to select parts (7 total)." << endl;
+	cout << "\tOnce all parts are selected, press x/X to exit." << endl;
+	cout << "\tIf you make a mistake, press u/U to undo your action." << endl << endl;
 }
 
 // Shows image
@@ -101,133 +138,282 @@ static void show_image() {
 	namedWindow(IMAGE_DIRECTORY, WINDOW_AUTOSIZE);				// Create a window for display.
 	setMouseCallback(IMAGE_DIRECTORY, mouse_callback, NULL);	// Sets callback function for mouse
 	imshow(IMAGE_DIRECTORY, image);								// Show our image inside it.
-	waitKey(0);													// Wait for a keystroke in the window
+	char keystroke = 0;
+
+	// Continue until conditions met
+	while (1) {
+		keystroke = waitKey(1);		// Wait for a keystroke in the window
+
+		// Undo
+		if (keystroke == 'u' || keystroke == 'U') {
+			undo();
+		}
+
+		// Zoom
+		else if (keystroke == 'z') {
+			zoom(X_POS, Y_POS);
+		}
+		else if (keystroke == 'Z') { // Zoom out to original
+			IMAGES[LOCATION]->copyTo(*TEMP);
+			imshow(IMAGE_DIRECTORY, *TEMP);
+		}
+
+		// Exit
+		else if ((keystroke == 'x' || keystroke == 'X') && (LOCATION != 7)) {
+			cout << "Please pick all points before concluding." << endl;
+			cout << LOCATION + 1 << " / 7 points chosen." << endl << endl;
+		}
+		else if ((keystroke == 'x' || keystroke == 'X') && (LOCATION == 7)) {
+			break;
+		}
+	}
+	cout << "Point input concluded!" << endl << endl;
+	destroyAllWindows();
 }
 
 // Mouse callback function
 void mouse_callback(int event, int x, int y, int flags, void* userdata)
 {
-	// Undo command
-	if (event == EVENT_RBUTTONDOWN) {
-		cout << "UNDO ";
-		if (LOCATION == 1) {
-			cout << "left side." << endl;
-		}
-		else if (LOCATION == 2) {
-			cout << "right side." << endl;
-		}
-		else if (LOCATION == 3) {
-			cout << "top side." << endl;
-		}
-		else if (LOCATION == 4) {
-			cout << "bottom side." << endl;
-		}
-		else if (LOCATION == 5) {
-			cout << "first anchor." << endl;
-		}
-		else if (LOCATION == 6) {
-			cout << "second anchor." << endl;
-		}
-		else if (LOCATION == 7) {
-			cout << "third anchor." << endl;
-		}
-
-		// Make sure index doesn't get reduced to negatives.
-		if (LOCATION > 0) {
-			LOCATION--;
-		}
-	}
-
 	// Get width
-	else if (LOCATION < 2) {
-		if (event == EVENT_LBUTTONDOWN) {
+	X_POS = x;
+	Y_POS = y;
+	if (LOCATION < 2) {
+		if (event == EVENT_LBUTTONDOWN || event == EVENT_RBUTTONDOWN) {
 
 			// Left side
 			if (LOCATION == 0) {
-				cout << "Left side of rat eye selected at (" << x << ", " << y << ")" << endl;
+				cout << "Width side 1 of rat eye selected at (" << x << ", " << y << ")" << endl;
 				POINTS[LOCATION]->set_coords(x, y);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
+				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 255, 0, 1), -1);
+				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
+				IMAGES[LOCATION]->copyTo(*TEMP);
+
 			}
 
 			// Right side
 			else if (LOCATION == 1) {
-				cout << "Right side of rat eye selected at (" << x << ", " << y << ")" << endl;
+				cout << "Width side 2 of rat eye selected at (" << x << ", " << y << ")" << endl;
 				POINTS[LOCATION]->set_coords(x, y);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
+				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 255, 0, 1), -1);
+				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(0, 255, 0, 1), 1);
+				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 		}
 	}
 
 	// Get height
 	else if (LOCATION < 4) {
-		if (event == EVENT_LBUTTONDOWN) {
+		if (event == EVENT_LBUTTONDOWN || event == EVENT_RBUTTONDOWN) {
 
 			// Top side
 			if (LOCATION == 2) {
-				cout << "Top side of rat eye selected at (" << x << ", " << y << ")" << endl;
+				cout << "Height side 1 of rat eye selected at (" << x << ", " << y << ")" << endl;
 				POINTS[LOCATION]->set_coords(x, y);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
+				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(255, 0, 0, 1), -1);
+				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 
 			// Bottom side
 			else if (LOCATION == 3) {
-				cout << "Bottom side of rat eye selected at (" << x << ", " << y << ")" << endl;
+				cout << "Height side 2 of rat eye selected at (" << x << ", " << y << ")" << endl;
 				POINTS[LOCATION]->set_coords(x, y);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
+				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(255, 0, 0, 1), -1);
+				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(255, 0, 0, 1), 1);
+				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 		}
 	}
 
 	// Get angle
 	else if (LOCATION < 7) {
-		if (event == EVENT_LBUTTONDOWN) {
+		if (event == EVENT_LBUTTONDOWN || event == EVENT_RBUTTONDOWN) {
 
 			// First anchor point
 			if (LOCATION == 4) {
 				cout << "First anchor point selected at (" << x << ", " << y << ")" << endl;
 				POINTS[LOCATION]->set_coords(x, y);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
+				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 0, 255, 1), -1);
+				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 
 			// Second anchor point
 			else if (LOCATION == 5) {
-				cout << "Second anchor point selected at (" << x << ", " << y << ")" << endl;
+				cout << "Second (middle) anchor point selected at (" << x << ", " << y << ")" << endl;
 				POINTS[LOCATION]->set_coords(x, y);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
+				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 0, 255, 1), -1);
+				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(0, 0, 255, 255), 2);
+				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 
 			// Third anchor point
 			else if (LOCATION == 6) {
 				cout << "Last anchor point selected at (" << x << ", " << y << ")" << endl;
 				POINTS[LOCATION]->set_coords(x, y);
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
+				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 0, 255, 1), -1);
+				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(0, 0, 255, 255), 2);
+				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
 			}
 		}
 	}
-	/*
-	else if (event == EVENT_MOUSEMOVE)
-	{
-		cout << "Mouse move over the window - position (" << x << ", " << y << ")" << endl;
 
+	else if (LOCATION >= 7) {
+		if (event == EVENT_LBUTTONDOWN || event == EVENT_RBUTTONDOWN) {
+			cout << "All points have been selected. Please press x/X to conclude or u/U if you need to undo an action." << endl;
+		}
 	}
-	*/
 }
 
-// Calculates width for height/width ratio
-static void calc_width() {
-	while (LOCATION < 2) {
-		if (LOCATION == 0) {
-			cout << "Select the left side of the rat's eye, then press ENTER." << endl;
-			cin.ignore();
-			POINTS[LOCATION]->set_coords(X_POS, Y_POS);
-			cout << "Point at (" << POINTS[LOCATION]->get_x() << ", " << POINTS[LOCATION]->get_y() << ") selected." << endl;
-			LOCATION++;
+// Undo command
+static void undo() {
+	if (LOCATION > 0) {
+		cout << "UNDO ";
+		if (LOCATION == 1) {
+			cout << "width side 1." << endl;
 		}
-		else if (LOCATION == 1) {
-			cout << "Select the right side of the rat's eye, then press ENTER." << endl;
-			cin.ignore();
-			POINTS[LOCATION]->set_coords(X_POS, Y_POS);
-			LOCATION++;
+		else if (LOCATION == 2) {
+			cout << "width side 2." << endl;
+		}
+		else if (LOCATION == 3) {
+			cout << "height side 1." << endl;
+		}
+		else if (LOCATION == 4) {
+			cout << "height side 2." << endl;
+		}
+		else if (LOCATION == 5) {
+			cout << "first anchor." << endl;
+		}
+		else if (LOCATION == 6) {
+			cout << "second anchor (middle)." << endl;
+		}
+		else if (LOCATION == 7) {
+			cout << "third anchor." << endl;
+		}
+		LOCATION--;
+		imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]); // originally at location
+	}
+}
+
+// Zoom in
+static void zoom(int x, int y) {
+	cout << "Zooming in" << endl;
+	int zoomRec = 200;
+	int width = zoomRec, height = zoomRec;
+	int ptoX = x - (zoomRec / 2), ptoY = y - (zoomRec / 2);
+	Mat imagen = *IMAGES[LOCATION];
+
+	/*Verifica que el ROI este dentro de la la imagen*/
+	if ((x + (zoomRec / 2)) > imagen.size().width)
+		width = width - ((x + (zoomRec / 2)) - imagen.size().width);
+
+	if ((y + (zoomRec / 2)) > imagen.size().height)
+		height = height - ((y + (zoomRec / 2)) - imagen.size().height);
+
+	if ((x - (zoomRec / 2)) < 0)
+		ptoX = 0;
+
+	if ((y - (zoomRec / 2)) < 0)
+		ptoY = 0;
+
+	Rect roi = Rect(ptoX, ptoY, width, height);
+	Mat imagen_roi = imagen(roi);
+	resize(imagen_roi, imagen_roi, Size(image.size().width, image.size().height), 0, 0, CV_INTER_AREA);
+	imshow(IMAGE_DIRECTORY, imagen_roi);
+}
+
+// Writes to a log for image info
+static void save() {
+	// Find distance for width selections
+	int w_x1 = POINTS[0]->get_x();
+	int w_y1 = POINTS[0]->get_y();
+	int w_x2 = POINTS[1]->get_x();
+	int w_y2 = POINTS[1]->get_y();
+	double width = sqrt(pow((w_x2 - w_x1), 2) + pow((w_y2 - w_y1), 2));
+
+	// Find distance for height selections
+	int h_x1 = POINTS[2]->get_x();
+	int h_y1 = POINTS[2]->get_y();
+	int h_x2 = POINTS[3]->get_x();
+	int h_y2 = POINTS[3]->get_y();
+	double height = sqrt(pow((h_x2 - h_x1), 2) + pow((h_y2 - h_y1), 2));
+
+	// Calculate ratio (height/width)
+	double height_width_ratio = height / width;
+
+	// Find angle given three anchor points with Law of Cosines
+	int anchor1_x = POINTS[4]->get_x();
+	int anchor1_y = POINTS[4]->get_y();
+	int anchor2_x = POINTS[5]->get_x();
+	int anchor2_y = POINTS[5]->get_y();
+	int anchor3_x = POINTS[6]->get_x();
+	int anchor3_y = POINTS[6]->get_y();
+	double a = sqrt(pow((anchor2_x - anchor1_x), 2) + pow((anchor2_y - anchor1_y), 2)); // Anchor 1 to 2
+	double b = sqrt(pow((anchor3_x - anchor2_x), 2) + pow((anchor3_y - anchor2_y), 2)); // Anchor 2 to 3
+	double c = sqrt(pow((anchor1_x - anchor3_x), 2) + pow((anchor1_y - anchor3_y), 2)); // Anchor 1 to 3
+	double angle = abs(acos((pow(c, 2) - pow(a, 2) - pow(b, 2)) / (-2 * a * b)) * (180.0 / PI));
+
+	// Prints results to console
+	cout << "Height: " << height << " pixels." << endl;
+	cout << "Width: " << width << " pixels." << endl;
+	cout << "Height / Width ratio: " << height_width_ratio << endl;
+	cout << "Angle: " << angle << " degrees." << endl << endl;
+
+	// Save into data log
+	string output = OUTPUT_CONSTANT + IMAGE_DIRECTORY.substr(0, IMAGE_DIRECTORY.find(".")) + ".txt";
+	ofstream output_file;
+	output_file.open(output, ios::out | ios::binary | ios::trunc);
+	output_file << IMAGE_DIRECTORY << endl << endl;
+	output_file << "Rat eye ratio (height/width): " << height_width_ratio << endl;
+	output_file << "\tHeight point 1: (" << h_x1 << ", " << h_y1 << ")" << endl;
+	output_file << "\tHeight point 2: (" << h_x2 << ", " << h_y2 << ")" << endl;
+	output_file << "\tWidth point 1: (" << w_x1 << ", " << w_y1 << ")" << endl;
+	output_file << "\tWidth point 2: (" << w_x2 << ", " << w_y2 << ")" << endl << endl;
+	output_file << "Rat face angle: " << angle << " degrees" << endl;
+	output_file << "\tAnchor 1: (" << anchor1_x << ", " << anchor1_y << ")" << endl;
+	output_file << "\tAnchor 2: (" << anchor2_x << ", " << anchor2_y << ")" << endl;
+	output_file << "\tAnchor 3: (" << anchor3_x << ", " << anchor3_y << ")" << endl;
+	output_file.close();
+}
+
+// Prompt to run another image
+static void prompt_new() {
+	cout << "Analysis of " << IMAGE_DIRECTORY << " concluded!" << endl << endl;
+	string response;
+	bool loop = true;
+	while (loop) {
+		cout << "Would you like to run another image? (y/n) ";
+		getline(cin, response);
+		if (response == "y" || response == "Y") {
+			loop = false;
+			REPEAT = true;
+			LOCATION = 0;
+			cout << endl;
+		}
+		else if (response == "n" || response == "N") {
+			loop = false;
+			REPEAT = false;
+		}
+		else {
+			cout << "Invalid response." << endl;
 		}
 	}
 }

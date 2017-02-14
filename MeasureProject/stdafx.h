@@ -19,6 +19,7 @@
 #include <experimental/filesystem>
 #include <vector>
 #include "Coordinates.h"
+#include <cmath>
 
 // OpenCV 3.10.3
 #include <opencv2/core/core.hpp>
