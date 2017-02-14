@@ -17,6 +17,8 @@
 #include <iostream>
 #include <fstream>
 #include <experimental/filesystem>
+#include <vector>
+#include "Coordinates.h"
 
 // OpenCV 3.10.3
 #include <opencv2/core/core.hpp>
