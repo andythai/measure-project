@@ -1,5 +1,5 @@
 // MeasureProject.cpp : Defines the entry point for the console application.
-//
+// TODO: MAKE SURE ZOOM STICKS THROUGH CLICKS
 #include "stdafx.h"
 
 // Namespaces
@@ -9,19 +9,22 @@ using namespace cv;
 
 // Global variables
 bool DEBUG = false;							// Debug to check version and dependencies
+bool REPEAT = true;							// Loop var to repeat main loop
+bool IS_ZOOM = false;						// Check if TEMP is zoomed in
 Mat image;									// Original image
+Mat* TEMP = new Mat();						// Copy of current shown iteration. Used as a WORKSPACE and displayed.
 string IMAGE_DIRECTORY;						// Input image
 const string INPUT_CONSTANT = "input/";		// Input folder string
 const string OUTPUT_CONSTANT = "output/";	// Output folder string
 vector<Coordinates*> POINTS;				// Pixel coordinates
 vector<Mat*> IMAGES;						// Vector of images for gfx, used for full resolution tagging. Backend, drawn on, but not displayed
-Mat* TEMP = new Mat();						// Copy of current shown iteration. Used as a WORKSPACE and displayed.
 int LOCATION = 0;							// Iteration index
-const double PI = 3.141592653589793238463;	// Pi constant
-bool REPEAT = true;							// Loop var to repeat main loop
 int X_POS = -1;								// Mouse position for x
 int Y_POS = -1;								// Mouse position for y
-int zoom_scale = 200;						// Scale to zoom in
+const int ZOOM_SCALE = 200;					// Scale to zoom in
+int ZOOM_TEMP_X = -1;						// Temp variables to keep zoom in the same area
+int ZOOM_TEMP_Y = -1;
+const double PI = 3.141592653589793238463;	// Pi constant
 
 // Forward declarations
 static void setup_vector();
@@ -137,7 +140,8 @@ static void print_controls() {
 static void show_image() {
 	namedWindow(IMAGE_DIRECTORY, WINDOW_AUTOSIZE);				// Create a window for display.
 	setMouseCallback(IMAGE_DIRECTORY, mouse_callback, NULL);	// Sets callback function for mouse
-	imshow(IMAGE_DIRECTORY, image);								// Show our image inside it.
+	IMAGES[0]->copyTo(*TEMP);									// Initialize TEMP
+	imshow(IMAGE_DIRECTORY, *TEMP);								// Show our image inside it.
 	char keystroke = 0;
 
 	// Continue until conditions met
@@ -154,6 +158,7 @@ static void show_image() {
 			zoom(X_POS, Y_POS);
 		}
 		else if (keystroke == 'Z') { // Zoom out to original
+			IS_ZOOM = false;
 			IMAGES[LOCATION]->copyTo(*TEMP);
 			imshow(IMAGE_DIRECTORY, *TEMP);
 		}
@@ -161,7 +166,7 @@ static void show_image() {
 		// Exit
 		else if ((keystroke == 'x' || keystroke == 'X') && (LOCATION != 7)) {
 			cout << "Please pick all points before concluding." << endl;
-			cout << LOCATION + 1 << " / 7 points chosen." << endl << endl;
+			cout << LOCATION << " / 7 points chosen." << endl << endl;
 		}
 		else if ((keystroke == 'x' || keystroke == 'X') && (LOCATION == 7)) {
 			break;
@@ -187,10 +192,14 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
 				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 255, 0, 1), -1);
-				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
-				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				IMAGES[LOCATION]->copyTo(*TEMP);
-
+				if (IS_ZOOM) {
+					zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+				}
+				else {
+					imshow(IMAGE_DIRECTORY, *TEMP);
+				}
+				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 
 			// Right side
@@ -201,7 +210,13 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 				LOCATION++;
 				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 255, 0, 1), -1);
 				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(0, 255, 0, 1), 1);
-				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*TEMP);
+				if (IS_ZOOM) {
+					zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+				}
+				else {
+					imshow(IMAGE_DIRECTORY, *TEMP);
+				}
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 		}
@@ -218,7 +233,13 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
 				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(255, 0, 0, 1), -1);
-				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*TEMP);
+				if (IS_ZOOM) {
+					zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+				}
+				else {
+					imshow(IMAGE_DIRECTORY, *TEMP);
+				}
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 
@@ -230,7 +251,13 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 				LOCATION++;
 				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(255, 0, 0, 1), -1);
 				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(255, 0, 0, 1), 1);
-				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*TEMP);
+				if (IS_ZOOM) {
+					zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+				}
+				else {
+					imshow(IMAGE_DIRECTORY, *TEMP);
+				}
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 		}
@@ -247,7 +274,13 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 				LOCATION++;
 				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 0, 255, 1), -1);
-				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*TEMP);
+				if (IS_ZOOM) {
+					zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+				}
+				else {
+					imshow(IMAGE_DIRECTORY, *TEMP);
+				}
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 
@@ -259,7 +292,13 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 				LOCATION++;
 				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 0, 255, 1), -1);
 				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(0, 0, 255, 255), 2);
-				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*TEMP);
+				if (IS_ZOOM) {
+					zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+				}
+				else {
+					imshow(IMAGE_DIRECTORY, *TEMP);
+				}
 				IMAGES[LOCATION]->copyTo(*IMAGES[LOCATION + 1]);
 			}
 
@@ -271,7 +310,13 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 				LOCATION++;
 				circle(*IMAGES[LOCATION], Point(x, y), 2, Scalar(0, 0, 255, 1), -1);
 				line(*IMAGES[LOCATION], Point(POINTS[LOCATION - 2]->get_x(), POINTS[LOCATION - 2]->get_y()), Point(x, y), Scalar(0, 0, 255, 255), 2);
-				imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]);
+				IMAGES[LOCATION]->copyTo(*TEMP);
+				if (IS_ZOOM) {
+					zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+				}
+				else {
+					imshow(IMAGE_DIRECTORY, *TEMP);
+				}
 			}
 		}
 	}
@@ -309,34 +354,41 @@ static void undo() {
 			cout << "third anchor." << endl;
 		}
 		LOCATION--;
-		imshow(IMAGE_DIRECTORY, *IMAGES[LOCATION]); // originally at location
+		IMAGES[LOCATION]->copyTo(*TEMP);
+		imshow(IMAGE_DIRECTORY, *TEMP);
 	}
 }
 
 // Zoom in
 static void zoom(int x, int y) {
-	cout << "Zooming in" << endl;
-	int zoomRec = 200;
-	int width = zoomRec, height = zoomRec;
-	int ptoX = x - (zoomRec / 2), ptoY = y - (zoomRec / 2);
-	Mat imagen = *IMAGES[LOCATION];
+
+	// Saves temp variables for keeping zoom consistent throughout iterations
+	ZOOM_TEMP_X = x;
+	ZOOM_TEMP_Y = y;
+	IS_ZOOM = true;
+
+	int width = ZOOM_SCALE;
+	int height = ZOOM_SCALE;
+
+	int ptoX = x - (ZOOM_SCALE / 2), ptoY = y - (ZOOM_SCALE / 2);
+	Mat imagen = *TEMP;
 
 	/*Verifica que el ROI este dentro de la la imagen*/
-	if ((x + (zoomRec / 2)) > imagen.size().width)
-		width = width - ((x + (zoomRec / 2)) - imagen.size().width);
+	if ((x + (ZOOM_SCALE / 2)) > imagen.size().width)
+		width = width - ((x + (ZOOM_SCALE / 2)) - imagen.size().width);
 
-	if ((y + (zoomRec / 2)) > imagen.size().height)
-		height = height - ((y + (zoomRec / 2)) - imagen.size().height);
+	if ((y + (ZOOM_SCALE / 2)) > imagen.size().height)
+		height = height - ((y + (ZOOM_SCALE / 2)) - imagen.size().height);
 
-	if ((x - (zoomRec / 2)) < 0)
+	if ((x - (ZOOM_SCALE / 2)) < 0)
 		ptoX = 0;
 
-	if ((y - (zoomRec / 2)) < 0)
+	if ((y - (ZOOM_SCALE / 2)) < 0)
 		ptoY = 0;
 
 	Rect roi = Rect(ptoX, ptoY, width, height);
 	Mat imagen_roi = imagen(roi);
-	resize(imagen_roi, imagen_roi, Size(image.size().width, image.size().height), 0, 0, CV_INTER_AREA);
+	resize(imagen_roi, imagen_roi, Size(IMAGES[0]->size().width, IMAGES[0]->size().height), 0, 0, CV_INTER_AREA);
 	imshow(IMAGE_DIRECTORY, imagen_roi);
 }
 
