@@ -24,6 +24,8 @@ int Y_POS = -1;								// Mouse position for y
 const int ZOOM_SCALE = 200;					// Scale to zoom in
 int ZOOM_TEMP_X = -1;						// Temp variables to keep zoom in the same area
 int ZOOM_TEMP_Y = -1;
+int ZOOM_RECT_X = -1;						// x,y coordinates of zoomed in box
+int ZOOM_RECT_Y = -1;
 const double PI = 3.141592653589793238463;	// Pi constant
 
 // Forward declarations
@@ -182,6 +184,12 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 	// Get width
 	X_POS = x;
 	Y_POS = y;
+
+	if (IS_ZOOM) {
+		x = (((double)x / 1440.0) * ZOOM_SCALE) + ZOOM_RECT_X;
+		y = (((double)y / 1080.0) * ZOOM_SCALE) + ZOOM_RECT_Y;
+	}
+
 	if (LOCATION < 2) {
 		if (event == EVENT_LBUTTONDOWN || event == EVENT_RBUTTONDOWN) {
 
@@ -355,7 +363,12 @@ static void undo() {
 		}
 		LOCATION--;
 		IMAGES[LOCATION]->copyTo(*TEMP);
-		imshow(IMAGE_DIRECTORY, *TEMP);
+		if (IS_ZOOM) {
+			zoom(ZOOM_TEMP_X, ZOOM_TEMP_Y);
+		}
+		else {
+			imshow(IMAGE_DIRECTORY, *TEMP);
+		}
 	}
 }
 
@@ -370,7 +383,8 @@ static void zoom(int x, int y) {
 	int width = ZOOM_SCALE;
 	int height = ZOOM_SCALE;
 
-	int ptoX = x - (ZOOM_SCALE / 2), ptoY = y - (ZOOM_SCALE / 2);
+	int ptoX = x - (ZOOM_SCALE / 2);
+	int ptoY = y - (ZOOM_SCALE / 2);
 	Mat imagen = *TEMP;
 
 	/*Verifica que el ROI este dentro de la la imagen*/
@@ -387,6 +401,10 @@ static void zoom(int x, int y) {
 		ptoY = 0;
 
 	Rect roi = Rect(ptoX, ptoY, width, height);
+
+	ZOOM_RECT_X = ptoX;
+	ZOOM_RECT_Y = ptoY;
+
 	Mat imagen_roi = imagen(roi);
 	resize(imagen_roi, imagen_roi, Size(IMAGES[0]->size().width, IMAGES[0]->size().height), 0, 0, CV_INTER_AREA);
 	imshow(IMAGE_DIRECTORY, imagen_roi);
@@ -424,10 +442,10 @@ static void save() {
 	double angle = abs(acos((pow(c, 2) - pow(a, 2) - pow(b, 2)) / (-2 * a * b)) * (180.0 / PI));
 
 	// Prints results to console
-	cout << "Height: " << height << " pixels." << endl;
-	cout << "Width: " << width << " pixels." << endl;
+	cout << "Height: " << height << " pixels" << endl;
+	cout << "Width: " << width << " pixels" << endl;
 	cout << "Height / Width ratio: " << height_width_ratio << endl;
-	cout << "Angle: " << angle << " degrees." << endl << endl;
+	cout << "Angle: " << angle << " degrees" << endl << endl;
 
 	// Save into data log
 	string output = OUTPUT_CONSTANT + IMAGE_DIRECTORY.substr(0, IMAGE_DIRECTORY.find(".")) + ".txt";
