@@ -186,8 +186,8 @@ void mouse_callback(int event, int x, int y, int flags, void* userdata)
 	Y_POS = y;
 
 	if (IS_ZOOM) {
-		x = (((double)x / 1440.0) * ZOOM_SCALE) + ZOOM_RECT_X;
-		y = (((double)y / 1080.0) * ZOOM_SCALE) + ZOOM_RECT_Y;
+		x = (((double)x / (double)TEMP->size().width) * ZOOM_SCALE) + ZOOM_RECT_X;
+		y = (((double)y / (double)TEMP->size().height) * ZOOM_SCALE) + ZOOM_RECT_Y;
 	}
 
 	if (LOCATION < 2) {
